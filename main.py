@@ -306,7 +306,6 @@ if __name__ == '__main__':
 
     for i, _ in enumerate(out):
         out[i]['hdr'] = hdr[i]
-
     '''
     make_figure(out[0])
     '''
