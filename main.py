@@ -20,6 +20,7 @@ class NumpyArrayEncoder(JSONEncoder):
     Overwrite some of the json encoder to handle slices and numpy arrays.
     This allows dictionaries to be saved as json and loaded in later.
     """
+
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -42,7 +43,7 @@ def load_fits_data(filepath):
     return hdr, data
 
 
-def load_all_data(folder_path):
+def load_all_data(folder_path, N_files=None):
     """
     Load in all .fits files from a given directory
     :param folder_path:
@@ -51,7 +52,10 @@ def load_all_data(folder_path):
 
     hdr = []
     data = []
-    for file in sorted(glob.glob(folder_path + '*.fits')):
+    for ii, file in enumerate(sorted(glob.glob(folder_path + '*.fits'))):
+        if N_files is not None:
+            if N_files <= ii:
+                break
         tmp = load_fits_data(file)
         hdr.append(tmp[0])
         data.append(tmp[1])
@@ -275,14 +279,20 @@ def make_figure(out_dict):
     dy = roi[1].stop - roi[1].start
 
     for label_index in range(out_dict['N_regions']):
-        points = np.asarray([kpoints for kpoints in out_dict['kmeans_points']])
-        klabels = np.asarray([kmeans.labels_ for kmeans in out_dict['kmeans']])
-        cluster_centers = np.squeeze([kmeans.cluster_centers_ for kmeans in out_dict['kmeans']])
+        points = np.asarray(out_dict['kmeans_points'][label_index])
+        klabels = np.asarray(out_dict['kmeans'][label_index].labels_)
+        cluster_centers = np.asarray(out_dict['kmeans'][label_index].cluster_centers_)
 
         num_unique_labels = np.unique(klabels)
+        #        if klabels.ndim > 2:
+        #            num_unique_labels = np.unique(klabels[label_index])
+        #        else:
+        #            num_unique_labels = np.unique(klabels)
+
         colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(num_unique_labels))]
 
-        ax[1, 0].scatter(regionprops(img_label)[label_index].centroid[1], regionprops(img_label)[label_index].centroid[0],
+        ax[1, 0].scatter(regionprops(img_label)[label_index].centroid[1],
+                         regionprops(img_label)[label_index].centroid[0],
                          c='g', zorder=2)
 
         for k, col in zip(range(len(colors)), colors):
@@ -315,15 +325,15 @@ def make_figure(out_dict):
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/')
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=30)
 
+    print(data.shape)
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        out = pool.map(worker, data[:20], chunksize=1)
+        out = pool.map(worker, (dat for dat in data[:20]), chunksize=1)
 
     for i, _ in enumerate(out):
         out[i]['hdr'] = hdr[i]
 
-    for i in range(5):
-        fig, ax = make_figure(out[i])
+    for i in range(10):
+        make_figure(out[i])
         plt.show()
-
