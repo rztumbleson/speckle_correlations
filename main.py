@@ -325,15 +325,15 @@ def make_figure(out_dict):
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=30)
+    data, hdr = load_all_data('./test_data/')
 
     print(data.shape)
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        out = pool.map(worker, (dat for dat in data[:20]), chunksize=1)
+        out = pool.map(worker, (dat for dat in data[:12]), chunksize=1)
 
     for i, _ in enumerate(out):
         out[i]['hdr'] = hdr[i]
 
-    for i in range(10):
+    for i in range(3):
         make_figure(out[i])
         plt.show()
