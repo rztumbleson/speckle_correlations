@@ -190,9 +190,10 @@ def cluster_data(img, img_label, regions, SPECKLE_SIZE):
     test_points = np.asarray(test_points)
     try:
         db = cluster.DBSCAN(eps=15, min_samples=2).fit(test_points)
-        db_points = test_points[db.core_sample_indices_]
+        # db_points = test_points[db.core_sample_indices_]
         db_points = test_points[np.where(db.labels_ == scipy.stats.mode(db.labels_).mode)]
-    except:
+
+    except ValueError:
         db_points = []
 
     return kmeans_all, kmeans_points, db_points
@@ -221,7 +222,9 @@ def worker(iter_img):
         try:
             mean = np.mean(db_points, axis=0) + [roi[0].start, roi[1].start]
             std = np.std(db_points, axis=0)
-        except:
+
+        except RuntimeWarning:
+            # mean of an empty slice
             mean = [0, 0]
             std = [0, 0]
 
@@ -231,7 +234,7 @@ def worker(iter_img):
     phi = np.arctan(dy / dx)
 
     out = {}
-    out['N_regions'] = len(regions)
+    out['N_regions'] = len(kmeans)
     out['filtered_image'] = speckle_filter
     out['kmeans'] = kmeans
     out['kmeans_points'] = kmeans_points
@@ -261,7 +264,7 @@ def make_figure(out_dict):
     :param out_dict: summary dictionary from worker function
     :return: matplotlib figure and axes
     """
-    fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(18, 10))
+    fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(9, 5))
 
     img = out_dict['roi_image']
     orig_img = out_dict['original_image']
@@ -301,7 +304,11 @@ def make_figure(out_dict):
             ax[1, 1].plot(cluster_centers[k, 1], cluster_centers[k, 0], '.', color=col, markersize=12,
                           markeredgecolor='k', zorder=2)
 
-    ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12, markeredgecolor='k', zorder=2)
+    try:
+        ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12, markeredgecolor='k', zorder=2)
+    except TypeError:
+        # This happens if db_points = []
+        pass
 
     ax[0, 0].imshow(orig_img, norm=mpl.colors.LogNorm())
 
@@ -325,15 +332,16 @@ def make_figure(out_dict):
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=30)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=100)
 
-    print(data.shape)
+    print(f'Loaded data shape: {data.shape}')
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        out = pool.map(worker, (dat for dat in data[:20]), chunksize=1)
+        out = pool.map(worker, (dat for dat in data[:100]), chunksize=1)
 
     for i, _ in enumerate(out):
         out[i]['hdr'] = hdr[i]
 
-    for i in range(10):
+    for i in range(100):
         make_figure(out[i])
-        plt.show()
+        #plt.show()
+        plt.close()
