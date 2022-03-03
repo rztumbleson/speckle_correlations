@@ -14,6 +14,7 @@ from json import JSONEncoder
 import multiprocessing as mp
 import warnings
 
+import pandas as pd
 
 class NumpyArrayEncoder(JSONEncoder):
     """
@@ -199,17 +200,19 @@ def cluster_data(img, img_label, regions, SPECKLE_SIZE):
     return kmeans_all, kmeans_points, db_points
 
 
-def worker(iter_img):
+def worker(args):
     """
     Multiprocess safe implementation of main processing. Takes raw img, applies roi, filters out non-speckles,
     labels processed image, clusters using kmeans and dbscan.
-    :param iter_img: single raw data image
+    :param args: two tuple: args[0] single raw data image, args[1] hdr
     :return: dictionary with useful parameters (see bottom of function for list)
     """
     roi = (slice(180, 235), slice(150, 270))
     origin = (270, 329)
     SPECKLE_SIZE = 3.7  # 5.8 is calculated with 10um pinhole
 
+    iter_img = args[0]
+    hdr = args[1]
     img = iter_img[roi]
 
     speckle_filter = filter_image_data(img)  # isolate speckles
@@ -249,7 +252,9 @@ def worker(iter_img):
     out['r'] = r
     out['phi'] = phi
     out['speckle_size'] = SPECKLE_SIZE
-    return out
+    out['hdr'] = hdr
+
+    return pd.DataFrame([out])
 
 
 def make_figure(out_dict):
@@ -287,10 +292,6 @@ def make_figure(out_dict):
         cluster_centers = np.asarray(out_dict['kmeans'][label_index].cluster_centers_)
 
         num_unique_labels = np.unique(klabels)
-        #        if klabels.ndim > 2:
-        #            num_unique_labels = np.unique(klabels[label_index])
-        #        else:
-        #            num_unique_labels = np.unique(klabels)
 
         colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(num_unique_labels))]
 
@@ -332,16 +333,15 @@ def make_figure(out_dict):
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=100)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=10)
 
     print(f'Loaded data shape: {data.shape}')
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        out = pool.map(worker, (dat for dat in data[:100]), chunksize=1)
+        out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in zip(data[:10], hdr[:10])), chunksize=1)
 
-    for i, _ in enumerate(out):
-        out[i]['hdr'] = hdr[i]
+    df = pd.concat(out, ignore_index=True)
 
-    for i in range(100):
-        make_figure(out[i])
-        #plt.show()
+    for i in range(10):
+        make_figure(df.loc[i])
+        plt.show()
         plt.close()
