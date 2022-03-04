@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats
@@ -22,10 +23,20 @@ def load_fits_data(filepath):
     :return: header, data
     """
 
-    hdul = fits.open(filepath)
-    hdr = hdul[0].header
-    data = hdul[2].data
-    hdul.close()
+    try:
+        with fits.open(filepath) as hdul:
+            # Beamline 12
+            hdr = hdul[0].header
+            data = hdul[2].data
+    except IndexError:
+        with fits.open(filepath) as hdul:
+            # Cosmic
+            try:
+                hdr = hdul[0].header
+                data = hdul[0].data
+            except IndexError:
+                print(hdul.info())
+
     return hdr, data
 
 
@@ -47,7 +58,7 @@ def load_all_data(folder_path, N_files=None):
         data.append(tmp[1])
 
     data = np.asarray(data)
-    return data, hdr
+    return np.squeeze(data), hdr
 
 
 def filter_image_data(data):
@@ -336,14 +347,28 @@ def make_figures(df, n_figures=-1, show_image=True, save_image=False, save_path=
 
 if __name__ == '__main__':
     data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=10)
+    '''
+    data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
+                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', N_files=1)
+    '''
 
     print(f'Loaded data shape: {data.shape}')
-    with mp.Pool(processes=mp.cpu_count()) as pool:
-        out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in zip(data[:10], hdr[:10])), chunksize=1)
+
+
+    worker_iterations = 10
+
+    with mp.Pool(processes=mp.cpu_count()-4) as pool:
+        if len(hdr) != len(data):
+            out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
+                                    zip(data[:worker_iterations], itertools.repeat(hdr, worker_iterations))),
+                           chunksize=1)
+        else:
+            out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
+                                    zip(data[:worker_iterations], hdr[:worker_iterations])),
+                           chunksize=1)
+
 
     df = pd.concat(out, ignore_index=True)
     df.to_pickle('./out.pkl')
 
-    df1 = pd.read_pickle('./out.pkl')
-
-    make_figures(df1, n_figures=3, save_image=True, show_image=True)
+    make_figures(df, n_figures=3, save_image=True, show_image=True)
