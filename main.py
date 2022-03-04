@@ -5,6 +5,7 @@ import scipy.stats
 import glob
 from astropy.io import fits
 import matplotlib as mpl
+import matplotlib.patches as mpatches
 from skimage import filters, segmentation, morphology
 from skimage.measure import label, regionprops
 from skimage.color import label2rgb
@@ -41,7 +42,7 @@ def load_fits_data(filepath):
     return hdr, data
 
 
-def load_all_data(folder_path, N_files=None):
+def load_all_data(folder_path, n_files=None):
     """
     Load in all .fits files from a given directory
     :param folder_path:
@@ -51,8 +52,8 @@ def load_all_data(folder_path, N_files=None):
     hdr = []
     data = []
     for ii, file in enumerate(sorted(glob.glob(folder_path + '*.fits'))):
-        if N_files is not None:
-            if N_files <= ii:
+        if n_files is not None:
+            if n_files <= ii:
                 break
         tmp = load_fits_data(file)
         hdr.append(tmp[0])
@@ -93,42 +94,42 @@ def label_image(img):
     return label_image
 
 
-def cluster_single_speckle_kmeans(img, SPECKLE_SIZE):
+def cluster_single_speckle_kmeans(img, speckle_size):
     """
     cluster points using kmeans algorithm. includes both location and value of points
     :param img: roi img
-    :param SPECKLE_SIZE: number of pixels in a speckle
+    :param speckle_size: number of pixels in a speckle
     :return: kmeans clustering of points
     """
     points = np.asarray(np.where(img)).T
     weights = img[np.where(img)] / np.linalg.norm(img)
-    N_clusters = round(np.sqrt(points.shape[0]) / SPECKLE_SIZE)
+    N_clusters = round(np.sqrt(points.shape[0]) / speckle_size)
 
     kmeans = KMeans(n_clusters=N_clusters).fit(points, weights)
     return kmeans, points
 
 
-def get_all_kmeans(img_label, regions, img, SPECKLE_SIZE):
+def get_all_kmeans(img_label, regions, img, speckle_size):
     """
     CURRENTLY NOT USING
     get points using kmeans algorithm for all regions within the img
     :param img_label: labelled image
     :param img: roi image
-    :param SPECKLE_SIZE: number of pixels in a speckle
+    :param speckle_size: number of pixels in a speckle
     :return: kmeans_list: kmeans clustering of points for all regions of the image
              points: list of all cluster points (only used for plotting)
     """
     kmeans_list = []
 
     for label_index, region in enumerate(regions):
-        if np.sqrt(region.area) < SPECKLE_SIZE:
+        if np.sqrt(region.area) < speckle_size:
             continue
 
         speckle_cluster = np.ma.filled(np.ma.masked_where(img_label != label_index + 1, img_label),
                                        0) * img  # Isolate a single connected region
 
         single_kmeans, points = cluster_single_speckle_kmeans(speckle_cluster,
-                                                              SPECKLE_SIZE)  # use kmeans to determine number of speckles in connected region
+                                                              speckle_size)  # use kmeans to determine number of speckles in connected region
 
         kmeans_list.append(single_kmeans)
     return kmeans_list, points
@@ -158,13 +159,13 @@ def get_db_points(kmeans):
     return db_points
 
 
-def cluster_data(img, img_label, regions, SPECKLE_SIZE):
+def cluster_data(img, img_label, regions, speckle_size):
     """
     cluster data using kmeans (both location and intensity) and then cluster kmeans cluster with dbscan (density-based).
     :param img: roi image
     :param img_label: labelled image
     :param regions: regions object from skimage.measure
-    :param SPECKLE_SIZE: number of pixels in single speckle
+    :param speckle_size: number of pixels in single speckle
     :return: kmeans: list of kmeans objects
             kmeans_points: list of points for each kmeans object
             dbpoint: list (possibly ndarray) of final point clustering
@@ -173,14 +174,14 @@ def cluster_data(img, img_label, regions, SPECKLE_SIZE):
     kmeans_points = []
     kmeans_all = []
     for label_index, region in enumerate(regions):
-        if np.sqrt(region.area) < SPECKLE_SIZE:
+        if np.sqrt(region.area) < speckle_size:
             continue
 
         speckle_cluster = np.ma.filled(np.ma.masked_where(img_label != label_index + 1,
                                                           img_label), 0) * img  # Isolate a single connected region
 
         kmeans, points = cluster_single_speckle_kmeans(speckle_cluster,
-                                                       SPECKLE_SIZE)  # determine number of speckles in connected region
+                                                       speckle_size)  # determine number of speckles in connected region
         kmeans_points.append(points)
         kmeans_all.append(kmeans)
         cluster_centers = kmeans.cluster_centers_
@@ -207,7 +208,7 @@ def worker(args):
     :param args: two tuple: args[0] single raw data image, args[1] hdr
     :return: dictionary with useful parameters (see bottom of function for list)
     """
-    roi = (slice(180, 235), slice(150, 270))
+    roi = (slice(190, 245), slice(150, 270))
     origin = (270, 329)
     speckle_size = 5.8  # 5.8 is calculated with 10um pinhole
 
@@ -226,15 +227,18 @@ def worker(args):
             mean = np.mean(db_points, axis=0) + [roi[0].start, roi[1].start]
             std = np.std(db_points, axis=0)
 
+            dx = origin[0] - mean[1]
+            dy = origin[1] - mean[0]
+            r = (np.sqrt(dx ** 2 + dy ** 2))
+            phi = np.arctan(dy / dx)
+
         except RuntimeWarning:
             # mean of an empty slice
             mean = [0, 0]
             std = [0, 0]
+            r = None
+            phi = None
 
-    dx = origin[0] - mean[1]
-    dy = origin[1] - mean[0]
-    r = (np.sqrt(dx ** 2 + dy ** 2))
-    phi = np.arctan(dy / dx)
 
     out = {}
     out['N_regions'] = len(kmeans)
@@ -309,12 +313,14 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
             for k, col in zip(range(len(colors)), colors):
                 my_members = klabels == k
-                ax[1, 1].plot(points[my_members, 1], points[my_members, 0], '.', color=col, markersize=8, alpha=1, zorder=2)
+                ax[1, 1].plot(points[my_members, 1], points[my_members, 0], '.', color=col, markersize=8,
+                              alpha=1, zorder=2)
                 ax[1, 1].plot(cluster_centers[k, 1], cluster_centers[k, 0], '.', color=col, markersize=12,
                               markeredgecolor='k', zorder=2)
 
         try:
-            ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12, markeredgecolor='k', zorder=2)
+            ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12,
+                          markeredgecolor='k', zorder=2)
         except TypeError:
             # This happens if db_points = []
             pass
@@ -323,12 +329,17 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
         ax[0, 0].plot(origin[0], origin[1], 'x', color='r', markersize=8)
         ax[0, 0].plot(mean[1], mean[0], 'x', color='r', markersize=8)
-        ax[0, 0].add_patch(
-            mpl.patches.Arrow(origin[0], origin[1], dx=-r * np.cos(phi), dy=-r * np.sin(phi), edgecolor='b', facecolor='b',
-                              zorder=2))
+
+        try:
+            ax[0, 0].add_patch(
+                mpatches.Arrow(origin[0], origin[1], dx=-r * np.cos(phi), dy=-r * np.sin(phi), edgecolor='b',
+                               facecolor='b', zorder=2))
+        except TypeError:
+            # This happens if r and phi are None
+            pass
 
         ax[0, 0].add_patch(
-            mpl.patches.Rectangle((roi[1].start, roi[0].start), dy, dx, linewidth=1, edgecolor='r', facecolor='none'))
+            mpatches.Rectangle((roi[1].start, roi[0].start), dy, dx, linewidth=1, edgecolor='r', facecolor='none'))
         ax[0, 1].imshow(img, zorder=1)
         ax[0, 2].imshow(speckle_filter)
         ax[1, 0].imshow(image_label_overlay)
@@ -353,11 +364,11 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/')#, N_files=10)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=100)
 
     '''
     data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
-                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', N_files=10)
+                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', n_files=10)
     '''
 
     with mp.Pool(processes=mp.cpu_count()) as pool:
@@ -369,8 +380,8 @@ if __name__ == '__main__':
                                     zip(data, hdr)), chunksize=1)
 
     df = pd.concat(out, ignore_index=True)
-    df.to_pickle('./out.pkl')
+    #df.to_pickle('./out.pkl')
 
     #df = pd.read_pickle('./out.pkl')
 
-    make_figures(df, save_image=True, show_image=False)
+    make_figures(df, save_image=False, show_image=False)
