@@ -182,7 +182,7 @@ def cluster_data(img, img_label, regions, speckle_size):
 
         kmeans, points = cluster_single_speckle_kmeans(speckle_cluster,
                                                        speckle_size)  # determine number of speckles in connected region
-        kmeans_points.append(points)
+        kmeans_points.append([tuple(p) for p in points])
         kmeans_all.append(kmeans)
         cluster_centers = kmeans.cluster_centers_
 
@@ -194,7 +194,7 @@ def cluster_data(img, img_label, regions, speckle_size):
         db = cluster.DBSCAN(eps=15, min_samples=2).fit(test_points)
         # db_points = test_points[db.core_sample_indices_]
         db_points = test_points[np.where(db.labels_ == scipy.stats.mode(db.labels_).mode)]
-
+        db_points = [tuple(dbp) for dbp in db_points]
     except ValueError:
         db_points = []
 
@@ -251,11 +251,11 @@ def worker(args):
     out['roi_image'] = iter_img[roi]
     out['origin'] = origin
     out['db_points'] = db_points
-    out['mean'] = mean
-    out['std'] = std
+    out['db_mean'] = tuple(mean)
     out['r'] = r
     out['phi'] = phi
     out['speckle_size'] = speckle_size
+    out['Iz'] = hdr['Iz']
     out['hdr'] = hdr
 
     return pd.DataFrame([out])
@@ -288,7 +288,7 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
         img_label = label_image(df_iter['filtered_image'])
         db_points = df_iter['db_points']
         origin = df_iter['origin']
-        mean = df_iter['mean']
+        mean = df_iter['db_mean']
         speckle_filter = df_iter['filtered_image']
         image_label_overlay = label2rgb(df_iter['label_image'], bg_label=0)
         r = df_iter['r']
@@ -364,7 +364,7 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=100)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=None)
 
     '''
     data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
@@ -380,8 +380,8 @@ if __name__ == '__main__':
                                     zip(data, hdr)), chunksize=1)
 
     df = pd.concat(out, ignore_index=True)
-    #df.to_pickle('./out.pkl')
+    df.to_pickle('./out.pkl')
 
     #df = pd.read_pickle('./out.pkl')
 
-    make_figures(df, save_image=False, show_image=False)
+    #make_figures(df, save_image=False, show_image=False)
