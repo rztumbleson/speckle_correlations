@@ -14,6 +14,7 @@ import multiprocessing as mp
 import warnings
 import os
 import pandas as pd
+from tqdm import tqdm
 
 
 def load_fits_data(filepath):
@@ -58,6 +59,9 @@ def load_all_data(folder_path, N_files=None):
         data.append(tmp[1])
 
     data = np.asarray(data)
+
+    print(f'Loaded data shape: {data.shape}')
+
     return np.squeeze(data), hdr
 
 
@@ -205,7 +209,7 @@ def worker(args):
     """
     roi = (slice(180, 235), slice(150, 270))
     origin = (270, 329)
-    SPECKLE_SIZE = 3.7  # 5.8 is calculated with 10um pinhole
+    speckle_size = 5.8  # 5.8 is calculated with 10um pinhole
 
     iter_img = args[0]
     hdr = args[1]
@@ -214,7 +218,7 @@ def worker(args):
     speckle_filter = filter_image_data(img)  # isolate speckles
     img_label = label_image(speckle_filter)  # label image
     regions = regionprops(img_label)  # get an array of regions with properties
-    kmeans, kmeans_points, db_points = cluster_data(img, img_label, regions, SPECKLE_SIZE)
+    kmeans, kmeans_points, db_points = cluster_data(img, img_label, regions, speckle_size)
 
     with warnings.catch_warnings():
         warnings.filterwarnings('error')
@@ -247,13 +251,13 @@ def worker(args):
     out['std'] = std
     out['r'] = r
     out['phi'] = phi
-    out['speckle_size'] = SPECKLE_SIZE
+    out['speckle_size'] = speckle_size
     out['hdr'] = hdr
 
     return pd.DataFrame([out])
 
 
-def make_figures(df, n_figures=-1, show_image=True, save_image=False, save_path='./imgs/'):
+def make_figures(df, n_figures=None, show_image=True, save_image=False, save_path='./imgs/'):
     """
     2x3 figure summarizing image processing.
     upper left: original image showing roi, centroid point, origin, and line that defines r and phi
@@ -269,102 +273,104 @@ def make_figures(df, n_figures=-1, show_image=True, save_image=False, save_path=
     :param save_path: (str) string path of image output folder
     :return: matplotlib figure and axes
     """
-    for ii, _ in enumerate(df):
-        if ii < n_figures:
-            df_iter = df.loc[ii]
-            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(9, 5))
+    if n_figures is None:
+        n_figures = df.shape[0]
+    for ii in tqdm(range(n_figures), desc='Making figures'):
+        df_iter = df.loc[ii]
+        fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(9, 5))
 
-            img = df_iter['roi_image']
-            orig_img = df_iter['original_image']
-            img_label = label_image(df_iter['filtered_image'])
-            db_points = df_iter['db_points']
-            origin = df_iter['origin']
-            mean = df_iter['mean']
-            speckle_filter = df_iter['filtered_image']
-            image_label_overlay = label2rgb(df_iter['label_image'], bg_label=0)
-            r = df_iter['r']
-            phi = df_iter['phi']
-            roi = df_iter['roi']
+        img = df_iter['roi_image']
+        orig_img = df_iter['original_image']
+        img_label = label_image(df_iter['filtered_image'])
+        db_points = df_iter['db_points']
+        origin = df_iter['origin']
+        mean = df_iter['mean']
+        speckle_filter = df_iter['filtered_image']
+        image_label_overlay = label2rgb(df_iter['label_image'], bg_label=0)
+        r = df_iter['r']
+        phi = df_iter['phi']
+        roi = df_iter['roi']
 
-            dx = roi[0].stop - roi[0].start
-            dy = roi[1].stop - roi[1].start
+        dx = roi[0].stop - roi[0].start
+        dy = roi[1].stop - roi[1].start
 
-            for label_index in range(df_iter['N_regions']):
-                points = np.asarray(df_iter['kmeans_points'][label_index])
-                klabels = np.asarray(df_iter['kmeans'][label_index].labels_)
-                cluster_centers = np.asarray(df_iter['kmeans'][label_index].cluster_centers_)
+        for label_index in range(df_iter['N_regions']):
+            points = np.asarray(df_iter['kmeans_points'][label_index])
+            klabels = np.asarray(df_iter['kmeans'][label_index].labels_)
+            cluster_centers = np.asarray(df_iter['kmeans'][label_index].cluster_centers_)
 
-                num_unique_labels = np.unique(klabels)
+            num_unique_labels = np.unique(klabels)
 
-                colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(num_unique_labels))]
+            colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(num_unique_labels))]
 
-                ax[1, 0].scatter(regionprops(img_label)[label_index].centroid[1],
-                                 regionprops(img_label)[label_index].centroid[0],
-                                 c='g', zorder=2)
+            ax[1, 0].scatter(regionprops(img_label)[label_index].centroid[1],
+                             regionprops(img_label)[label_index].centroid[0],
+                             c='g', zorder=2)
 
-                for k, col in zip(range(len(colors)), colors):
-                    my_members = klabels == k
-                    ax[1, 1].plot(points[my_members, 1], points[my_members, 0], '.', color=col, markersize=8, alpha=1, zorder=2)
-                    ax[1, 1].plot(cluster_centers[k, 1], cluster_centers[k, 0], '.', color=col, markersize=12,
-                                  markeredgecolor='k', zorder=2)
+            for k, col in zip(range(len(colors)), colors):
+                my_members = klabels == k
+                ax[1, 1].plot(points[my_members, 1], points[my_members, 0], '.', color=col, markersize=8, alpha=1, zorder=2)
+                ax[1, 1].plot(cluster_centers[k, 1], cluster_centers[k, 0], '.', color=col, markersize=12,
+                              markeredgecolor='k', zorder=2)
 
+        try:
+            ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12, markeredgecolor='k', zorder=2)
+        except TypeError:
+            # This happens if db_points = []
+            pass
+
+        ax[0, 0].imshow(orig_img, norm=mpl.colors.LogNorm())
+
+        ax[0, 0].plot(origin[0], origin[1], 'x', color='r', markersize=8)
+        ax[0, 0].plot(mean[1], mean[0], 'x', color='r', markersize=8)
+        ax[0, 0].add_patch(
+            mpl.patches.Arrow(origin[0], origin[1], dx=-r * np.cos(phi), dy=-r * np.sin(phi), edgecolor='b', facecolor='b',
+                              zorder=2))
+
+        ax[0, 0].add_patch(
+            mpl.patches.Rectangle((roi[1].start, roi[0].start), dy, dx, linewidth=1, edgecolor='r', facecolor='none'))
+        ax[0, 1].imshow(img, zorder=1)
+        ax[0, 2].imshow(speckle_filter)
+        ax[1, 0].imshow(image_label_overlay)
+
+        ax[1, 1].imshow(img, zorder=1)
+        ax[1, 2].imshow(img, zorder=1)
+
+        plt.tight_layout()
+
+        if save_image:
             try:
-                ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12, markeredgecolor='k', zorder=2)
-            except TypeError:
-                # This happens if db_points = []
-                pass
+                plt.savefig(save_path + f'{ii:04d}.png', format='png')
+            except FileNotFoundError:
+                os.makedirs(save_path)
+                plt.savefig(save_path + f'{ii:04d}.png', format='png')
+        if show_image:
+            plt.show()
 
-            ax[0, 0].imshow(orig_img, norm=mpl.colors.LogNorm())
-
-            ax[0, 0].plot(origin[0], origin[1], 'x', color='r', markersize=8)
-            ax[0, 0].plot(mean[1], mean[0], 'x', color='r', markersize=8)
-            ax[0, 0].add_patch(
-                mpl.patches.Arrow(origin[0], origin[1], dx=-r * np.cos(phi), dy=-r * np.sin(phi), edgecolor='b', facecolor='b',
-                                  zorder=2))
-
-            ax[0, 0].add_patch(
-                mpl.patches.Rectangle((roi[1].start, roi[0].start), dy, dx, linewidth=1, edgecolor='r', facecolor='none'))
-            ax[0, 1].imshow(img, zorder=1)
-            ax[0, 2].imshow(speckle_filter)
-            ax[1, 0].imshow(image_label_overlay)
-
-            ax[1, 1].imshow(img, zorder=1)
-            ax[1, 2].imshow(img, zorder=1)
-
-            plt.tight_layout()
-
-            if save_image:
-                try:
-                    plt.savefig(save_path + f'{ii:04d}.png', format='png')
-                except FileNotFoundError:
-                    os.makedirs(save_path)
-                    plt.savefig(save_path + f'{ii:04d}.png', format='png')
-            if show_image:
-                plt.show()
+        plt.close('all')
 
     return
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=100)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/')#, N_files=10)
+
     '''
     data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
-                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', N_files=1)
+                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', N_files=10)
     '''
-    print(f'Loaded data shape: {data.shape}')
 
-    worker_iterations = 100
-    with mp.Pool(processes=mp.cpu_count()-4) as pool:
+    with mp.Pool(processes=mp.cpu_count()) as pool:
         if len(hdr) != len(data):
             out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
-                                    zip(data[10:worker_iterations], itertools.repeat(hdr, worker_iterations))),
-                           chunksize=1)
+                                    zip(data, itertools.repeat(hdr, len(data)))), chunksize=1)
         else:
             out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
-                                    zip(data[10:worker_iterations], hdr[:worker_iterations])),
-                           chunksize=1)
+                                    zip(data, hdr)), chunksize=1)
 
     df = pd.concat(out, ignore_index=True)
-    #df.to_pickle('./out.pkl')
+    df.to_pickle('./out.pkl')
 
-    make_figures(df, n_figures=100, save_image=False, show_image=True)
+    #df = pd.read_pickle('./out.pkl')
+
+    make_figures(df, save_image=True, show_image=False)
