@@ -71,7 +71,7 @@ def filter_image_data(data):
     """
     erode = morphology.erosion(data)  # remove small background noise
     sobel = filters.sobel(erode)  # edge detection
-    coords = np.unravel_index(np.argmin(erode), erode.shape)
+    coords = np.unravel_index(np.argmin(data), data.shape)
     flood = np.invert(segmentation.flood(sobel, coords, tolerance=0.0005))  # fill to create mask for speckle only
     mask = morphology.remove_small_objects(flood, min_size=10)  # clean up small mask bits
     return data * mask
@@ -346,29 +346,25 @@ def make_figures(df, n_figures=-1, show_image=True, save_image=False, save_path=
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=10)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', N_files=100)
     '''
     data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
                               'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', N_files=1)
     '''
-
     print(f'Loaded data shape: {data.shape}')
 
-
-    worker_iterations = 10
-
+    worker_iterations = 100
     with mp.Pool(processes=mp.cpu_count()-4) as pool:
         if len(hdr) != len(data):
             out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
-                                    zip(data[:worker_iterations], itertools.repeat(hdr, worker_iterations))),
+                                    zip(data[10:worker_iterations], itertools.repeat(hdr, worker_iterations))),
                            chunksize=1)
         else:
             out = pool.map(worker, ((dat, hdr_) for dat, hdr_ in
-                                    zip(data[:worker_iterations], hdr[:worker_iterations])),
+                                    zip(data[10:worker_iterations], hdr[:worker_iterations])),
                            chunksize=1)
 
-
     df = pd.concat(out, ignore_index=True)
-    df.to_pickle('./out.pkl')
+    #df.to_pickle('./out.pkl')
 
-    make_figures(df, n_figures=3, save_image=True, show_image=True)
+    make_figures(df, n_figures=100, save_image=False, show_image=True)
