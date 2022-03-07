@@ -364,12 +364,7 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=10)
-
-    '''
-    data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
-                              'Endstation 7.0.1.1/Data/From Andor/FeGe Data for paper/', n_files=10)
-    '''
+    data, hdr = load_all_data('./test_data/')
 
     with mp.Pool(processes=mp.cpu_count()) as pool:
         if len(hdr) != len(data):
@@ -381,7 +376,5 @@ if __name__ == '__main__':
 
     df = pd.concat(out, ignore_index=True)
     #df.to_pickle('./out.pkl')
-
-    #df = pd.read_pickle('./out.pkl')
 
     make_figures(df, save_image=False, show_image=True)
