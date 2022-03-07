@@ -194,7 +194,7 @@ def cluster_data(img, img_label, regions, speckle_size):
         db = cluster.DBSCAN(eps=15, min_samples=2).fit(test_points)
         # db_points = test_points[db.core_sample_indices_]
         db_points = test_points[np.where(db.labels_ == scipy.stats.mode(db.labels_).mode)]
-        db_points = [tuple(dbp) for dbp in db_points]
+        #db_points = [tuple(dbp) for dbp in db_points]
     except ValueError:
         db_points = []
 
@@ -225,7 +225,6 @@ def worker(args):
         warnings.filterwarnings('error')
         try:
             mean = np.mean(db_points, axis=0) + [roi[0].start, roi[1].start]
-            std = np.std(db_points, axis=0)
 
             dx = origin[0] - mean[1]
             dy = origin[1] - mean[0]
@@ -321,6 +320,7 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
         try:
             ax[1, 2].plot(db_points[:, 1], db_points[:, 0], '.', color='r', markersize=12,
                           markeredgecolor='k', zorder=2)
+
         except TypeError:
             # This happens if db_points = []
             pass
@@ -364,7 +364,7 @@ def make_figures(df, n_figures=None, show_image=True, save_image=False, save_pat
 
 
 if __name__ == '__main__':
-    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=None)
+    data, hdr = load_all_data('G:/My Drive/Data/FeGe_jumps/158K/2021 12 12/Andor DO436 CCD/', n_files=10)
 
     '''
     data, hdr = load_all_data('G:/.shortcut-targets-by-id/1YpiqDkNOTGtSG67X3m1KkAOsZ3lZoC5i/Cosmic Scattering '
@@ -380,8 +380,8 @@ if __name__ == '__main__':
                                     zip(data, hdr)), chunksize=1)
 
     df = pd.concat(out, ignore_index=True)
-    df.to_pickle('./out.pkl')
+    #df.to_pickle('./out.pkl')
 
     #df = pd.read_pickle('./out.pkl')
 
-    #make_figures(df, save_image=False, show_image=False)
+    make_figures(df, save_image=False, show_image=True)
